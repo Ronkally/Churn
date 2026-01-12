@@ -1,0 +1,23 @@
+{
+  "name": "probot-playground",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/classifier.test.js test/parser.test.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@octokit/rest": "^22.0.0",
+    "dotenv": "^17.2.3",
+    "fs-extra": "^11.3.2",
+    "octokit": "^5.0.3",
+    "probot": "^13.4.7",
+    "simple-git": "^3.28.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
+  }
+}
