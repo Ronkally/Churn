@@ -1,45 +1,118 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert';
 
-// Test classification logic
+// Test classification logic - matching api.js implementation
 
+const CATEGORIES = {
+  CHURN: "Churn",
+  REWORK: "Rework",
+  NEW_WORK: "New Work",
+  HELP_OTHERS: "Help Others"
+};
+
+const HUNK_TYPES = {
+  ADD_ONLY: "add-only",
+  DELETE_ONLY: "delete-only",
+  REPLACE: "replace"
+};
+
+const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/**
+ * Extrae información del commit desde un rango de blame
+ * @param {Object} range - Rango de blame
+ * @returns {Object} { author, commitOid, date }
+ */
+function extractCommitInfo(range) {
+  const commit = range.commit || {};
+  const author = commit.author?.name || null;
+  const commitOid = commit.oid || null;
+  const dateStr = commit.committedDate || null;
+  const date = dateStr ? new Date(dateStr) : null;
+
+  return { author, commitOid, date };
+}
+
+/**
+ * Calcula la diferencia en días entre dos fechas
+ * @param {Date} currentDate - Fecha actual
+ * @param {Date} previousDate - Fecha previa
+ * @returns {number} Diferencia en días
+ */
+function calculateDeltaDays(currentDate, previousDate) {
+  const deltaMs = currentDate - previousDate;
+  return deltaMs / MILLISECONDS_PER_DAY;
+}
+
+/**
+ * Clasifica una línea agregada basándose en tipo de hunk e información de blame
+ * @param {number} lineNum - Número de línea en el archivo nuevo
+ * @param {string} hunkType - Tipo de hunk: "add-only", "replace", o "delete-only"
+ * @param {Array} blameRanges - Rangos de blame de git blame
+ * @param {string} currentAuthor - Autor del commit actual
+ * @param {Date} currentDate - Fecha del commit actual
+ * @param {number} maxDeltaDays - Umbral para churn vs rework (default 21 días)
+ * @returns {Object} Resultado de clasificación con category, prevAuthor, prevCommit, deltaDays
+ */
 function classifyLine(lineNum, hunkType, blameRanges, currentAuthor, currentDate, maxDeltaDays = 21) {
-  if (!Array.isArray(blameRanges)) blameRanges = [];
-
-  if (hunkType === "add-only") {
-    return { category: "New Work", prevAuthor: null, prevCommit: null, deltaDays: null };
+  if (!Array.isArray(blameRanges)) {
+    blameRanges = [];
   }
 
-  if (hunkType === "replace") {
+  // Si es un hunk add-only, siempre es New Work
+  if (hunkType === HUNK_TYPES.ADD_ONLY) {
+    return { 
+      category: CATEGORIES.NEW_WORK, 
+      prevAuthor: null, 
+      prevCommit: null, 
+      deltaDays: null 
+    };
+  }
+
+  // Para hunks replace, usar blame para determinar la categoría
+  if (hunkType === HUNK_TYPES.REPLACE) {
     const range = blameRanges.find(r => lineNum >= r.startingLine && lineNum <= r.endingLine);
 
     if (!range) {
-      return { category: "New Work", prevAuthor: null, prevCommit: null, deltaDays: null };
+      // No se encontró blame, tratar como New Work
+      return { 
+        category: CATEGORIES.NEW_WORK, 
+        prevAuthor: null, 
+        prevCommit: null, 
+        deltaDays: null 
+      };
     }
 
-    const prevAuthor = (range.commit && range.commit.author && range.commit.author.name) ? range.commit.author.name : null;
-    const prevCommit = range.commit && range.commit.oid ? range.commit.oid : null;
-    const prevDateStr = range.commit && range.commit.committedDate ? range.commit.committedDate : null;
-    const prevDate = prevDateStr ? new Date(prevDateStr) : null;
+    const { author: prevAuthor, commitOid: prevCommit, date: prevDate } = extractCommitInfo(range);
 
     if (!prevDate) {
-      return { category: "New Work", prevAuthor, prevCommit, deltaDays: null };
+      return { 
+        category: CATEGORIES.NEW_WORK, 
+        prevAuthor, 
+        prevCommit, 
+        deltaDays: null 
+      };
     }
 
-    const deltaMs = currentDate - prevDate;
-    const deltaDays = deltaMs / (1000 * 60 * 60 * 24);
+    const deltaDays = calculateDeltaDays(currentDate, prevDate);
 
     let category;
     if (prevAuthor === currentAuthor) {
-      category = deltaDays <= maxDeltaDays ? "Churn" : "Rework";
+      category = deltaDays <= maxDeltaDays ? CATEGORIES.CHURN : CATEGORIES.REWORK;
     } else {
-      category = "Help Others";
+      category = CATEGORIES.HELP_OTHERS;
     }
 
     return { category, prevAuthor, prevCommit, deltaDays };
   }
 
-  return { category: "New Work", prevAuthor: null, prevCommit: null, deltaDays: null };
+  // Hunks delete-only no agregan líneas, así que esto no debería ser llamado para ellos
+  return { 
+    category: CATEGORIES.NEW_WORK, 
+    prevAuthor: null, 
+    prevCommit: null, 
+    deltaDays: null 
+  };
 }
 
 describe('classifyLine', () => {
